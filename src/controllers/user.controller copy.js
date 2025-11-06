@@ -108,6 +108,29 @@ async function createEmpSheet(jsonData) {
       },
     });
 
+    // Extract headers from first row object
+    // const headers = Object.keys(jsonData[0]);
+    // const headerValues = Object.values(jsonData[0]);
+
+    // Remove the "S No" header and keep rest
+    // const cleanedHeaders = headerValues.filter(
+    //   (v) => v === "S No" || v === "Emp No" || v === "Name" || v === "DOJ"
+    // );
+
+    // // Convert back to key-based mapping if required
+    // const cleanedHeaderKeys = cleanedHeaders.map(
+    //   (h) => headers[headerValues.indexOf(h)]
+    // );
+
+    // // Now build values using cleaned keys
+    // const values = jsonData.map((obj) =>
+    //   cleanedHeaderKeys.map((h) => obj[h] ?? "")
+    // );
+
+    // console.log(values);
+
+    // const empDetails = [headers, ...values];
+
     const requiredHeaders = [
       "S No",
       "Emp No",
@@ -159,6 +182,7 @@ async function createEmpSheet(jsonData) {
 
     const cleanedHeaders = [...requiredHeaders];
 
+    // find the header mapping for the first row
     const cleanedHeaderKeys = requiredHeaders.map((reqHeader) => {
       let index = headerValues.indexOf(reqHeader);
       if (reqHeader === "Category" && index === -1) {
@@ -167,6 +191,11 @@ async function createEmpSheet(jsonData) {
       return index !== -1 ? headers[index] : null;
     });
 
+    // const values = jsonData
+    //   .slice(1)
+    //   .map((obj) => cleanedHeaderKeys.map((key) => (key ? obj[key] ?? 0 : 0)));
+
+    // ✅ Now handle row-wise Designation mapping properly
     const values = jsonData.slice(1).map((rowObj) =>
       requiredHeaders.map((reqHeader, idx) => {
         const key = cleanedHeaderKeys[idx];
