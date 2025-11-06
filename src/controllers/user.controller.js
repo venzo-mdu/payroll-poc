@@ -54,7 +54,8 @@ export const createUser = async (req, res) => {
 
 const CREDENTIALS_PATH = "./google.json";
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
-const SPREADSHEET_ID = "1L-ZQKG1Y3541s1xD9-Y_S_25Ta191oSbrw8uJHnq2oQ";
+// const SPREADSHEET_ID = "1L-ZQKG1Y3541s1xD9-Y_S_25Ta191oSbrw8uJHnq2oQ";
+const SPREADSHEET_ID = "1-zRLd6uIPotzcNJSEbJ4_MKS7K0NLX79Yt_kXOJ-_Dc";
 
 function generateUniqueId() {
   const now = Date.now().toString(36); // timestamp part
@@ -80,7 +81,7 @@ async function createEmpSheet(jsonData) {
     });
 
     const masterSheet = spreadsheet.data.sheets.find(
-      (s) => s.properties.title === "Sheet1"
+      (s) => s.properties.title === "ms"
     );
     if (!masterSheet) throw new Error("❌ Master sheet not found!");
 
@@ -106,13 +107,109 @@ async function createEmpSheet(jsonData) {
         ],
       },
     });
-    const headers = Object.keys(jsonData[0]);
-    const values = jsonData.map((obj) => headers.map((h) => obj[h]));
-    const empDetails = [headers, ...values];
+
+    // Extract headers from first row object
+    // const headers = Object.keys(jsonData[0]);
+    // const headerValues = Object.values(jsonData[0]);
+
+    // Remove the "S No" header and keep rest
+    // const cleanedHeaders = headerValues.filter(
+    //   (v) => v === "S No" || v === "Emp No" || v === "Name" || v === "DOJ"
+    // );
+
+    // // Convert back to key-based mapping if required
+    // const cleanedHeaderKeys = cleanedHeaders.map(
+    //   (h) => headers[headerValues.indexOf(h)]
+    // );
+
+    // // Now build values using cleaned keys
+    // const values = jsonData.map((obj) =>
+    //   cleanedHeaderKeys.map((h) => obj[h] ?? "")
+    // );
+
+    // console.log(values);
+
+    // const empDetails = [headers, ...values];
+
+    const requiredHeaders = [
+      "S No",
+      "Emp No",
+      "Name",
+      "DOJ",
+      "Category",
+      "Fixed Basic",
+      "Fixed VDA",
+      "HRA",
+      "Gross",
+      "Uniform",
+      "Per day Cost",
+      "Fixed Leave Wages",
+      "Working days",
+      "Man Days",
+      "Allowance Days",
+      "Gross",
+      "Basic",
+      "VDA",
+      "HRA",
+      "Leave Wages",
+      "Bonus",
+      "T.A. Allowance",
+      "Total Earn",
+      "Employee PF 12%",
+      "Employee ESI 0.75%",
+      "PT",
+      "LWF",
+      "Advances",
+      "Canteen Deduction",
+      "Other Deduction",
+      "Uniform",
+      "Total Deduc",
+      "Net Pay",
+      "Emplr PF 13%",
+      "Emplr ESI 3.25%",
+      "Empr LWF",
+      "Uniform",
+      "Total Cost",
+      "Service Charge 5 %",
+      "Cost",
+      "New Bank Accounts",
+      "IFSC code",
+      "Salary Process",
+    ];
+
+    const headerValues = Object.values(jsonData[0] || {});
+    const headers = Object.keys(jsonData[0] || {});
+
+    const cleanedHeaders = [...requiredHeaders];
+
+    // find the header mapping for the first row
+    const cleanedHeaderKeys = requiredHeaders.map((reqHeader) => {
+      let index = headerValues.indexOf(reqHeader);
+      if (reqHeader === "Category" && index === -1) {
+        index = headerValues.indexOf("Designation");
+      }
+      return index !== -1 ? headers[index] : null;
+    });
+
+    // const values = jsonData
+    //   .slice(1)
+    //   .map((obj) => cleanedHeaderKeys.map((key) => (key ? obj[key] ?? 0 : 0)));
+
+    // ✅ Now handle row-wise Designation mapping properly
+    const values = jsonData.slice(1).map((rowObj) =>
+      requiredHeaders.map((reqHeader, idx) => {
+        const key = cleanedHeaderKeys[idx];
+        return key && rowObj[key] !== undefined ? rowObj[key] : 0;
+      })
+    );
+
+    const empDetails = [cleanedHeaders, ...values];
+
+    console.log(empDetails);
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${newSheetName}!A1:C${empDetails.length}`,
+      range: `${newSheetName}!A1:AQ${empDetails.length}`,
       valueInputOption: "USER_ENTERED",
       requestBody: { values: empDetails },
     });
@@ -149,69 +246,6 @@ async function createEmpSheet(jsonData) {
     console.error("❌ Error:", error.message);
   }
 }
-
-// async function calculateFromSheets() {
-//   try {
-//     const client = await auth.getClient();
-//     const sheets = google.sheets({ version: "v4", auth: client });
-
-//     // ✅ Read data
-//     const masterRows =
-//       (
-//         await sheets.spreadsheets.values.get({
-//           spreadsheetId: MASTER_SHEET_ID,
-//           range: "MasterSheet!A2:C",
-//         })
-//       ).data.values || [];
-
-//     const project1Rows =
-//       (
-//         await sheets.spreadsheets.values.get({
-//           spreadsheetId: PROJECT1_ID,
-//           range: "Sheet1!A2:C",
-//         })
-//       ).data.values || [];
-
-//     // ✅ Calculation
-//     const result = masterRows.map((row, i) => {
-//       const masterValue = Number(row[2] || 0);
-//       const projectValue = Number(project1Rows[i]?.[2] || 0);
-//       return [row[0], masterValue, projectValue, masterValue + projectValue];
-//     });
-
-//     // ✅ Create new sheet tab in Project2 if not exists
-//     await sheets.spreadsheets
-//       .batchUpdate({
-//         spreadsheetId: PROJECT2_ID,
-//         requestBody: {
-//           requests: [
-//             {
-//               addSheet: { properties: { title: "CalculationResult" } },
-//             },
-//           ],
-//         },
-//       })
-//       .catch(() => {
-//         console.log(e);
-//       }); // Ignore error if sheet exists
-
-//     // ✅ Write results
-//     await sheets.spreadsheets.values.update({
-//       spreadsheetId: PROJECT2_ID,
-//       range: "CalculationResult!A1",
-//       valueInputOption: "USER_ENTERED",
-//       requestBody: {
-//         values: [["Name", "Master Value", "Project Value", "Total"], ...result],
-//       },
-//     });
-
-//     console.log("✅ Calculation complete!");
-//   } catch (error) {
-//     console.error("Error:", error.message);
-//   }
-// }
-
-// calculateFromSheets();
 
 export const getUsers = async (req, res) => {
   try {
