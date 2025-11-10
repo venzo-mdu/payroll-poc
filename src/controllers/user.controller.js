@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from "uuid";
 import path from "path";
 import fs from "fs";
 import XLSX from "xlsx";
+import { parseSalarySheet } from "./salaryExcel.js";
 
 export const createUser = async (req, res) => {
   try {
@@ -31,7 +32,15 @@ export const createUser = async (req, res) => {
         const sheet = workbook.Sheets[sheetName];
 
         const jsonData = XLSX.utils.sheet_to_json(sheet);
-        const createNewExcel = await createEmpSheet(jsonData);
+
+        const salarySheet = workbook.SheetNames[1];
+
+        const sheetSalary = workbook.Sheets[salarySheet];
+
+        const jsonDataSalary = XLSX.utils.sheet_to_json(sheetSalary);
+
+        const createNewExcel = await createEmpSheet(jsonData, jsonDataSalary);
+
         // Send response
         if (createNewExcel === "Formulas copied down successfully!") {
           return res.status(201).json({
@@ -54,8 +63,8 @@ export const createUser = async (req, res) => {
 
 const CREDENTIALS_PATH = "./google.json";
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
-// const SPREADSHEET_ID = "1L-ZQKG1Y3541s1xD9-Y_S_25Ta191oSbrw8uJHnq2oQ";
-const SPREADSHEET_ID = "1-zRLd6uIPotzcNJSEbJ4_MKS7K0NLX79Yt_kXOJ-_Dc";
+const SPREADSHEET_ID = "1ZwwBDyHc6bJunW9V_Uia3BzTrn5ahd8bkEjwc9xIUT0";
+// const SPREADSHEET_ID = "1-zRLd6uIPotzcNJSEbJ4_MKS7K0NLX79Yt_kXOJ-_Dc";
 
 function generateUniqueId() {
   const now = Date.now().toString(36); // timestamp part
@@ -66,7 +75,7 @@ function generateUniqueId() {
 const uuid = generateUniqueId();
 const newExcelName = `EmpDetails-${uuid}`;
 
-async function createEmpSheet(jsonData) {
+async function createEmpSheet(jsonData, jsonDataSalary) {
   try {
     const auth = new google.auth.GoogleAuth({
       keyFile: CREDENTIALS_PATH,
@@ -81,7 +90,7 @@ async function createEmpSheet(jsonData) {
     });
 
     const masterSheet = spreadsheet.data.sheets.find(
-      (s) => s.properties.title === "ms"
+      (s) => s.properties.title === "master"
     );
     if (!masterSheet) throw new Error("❌ Master sheet not found!");
 
@@ -112,8 +121,8 @@ async function createEmpSheet(jsonData) {
       "S No",
       "Emp No",
       "Name",
-      "DOJ",
       "Category",
+      "DOJ",
       "Fixed Basic",
       "Fixed VDA",
       "HRA",
@@ -127,7 +136,7 @@ async function createEmpSheet(jsonData) {
       "Gross",
       "Basic",
       "VDA",
-      "HRA",
+      "HRA-1",
       "Leave Wages",
       "Bonus",
       "T.A. Allowance",
@@ -155,6 +164,7 @@ async function createEmpSheet(jsonData) {
     ];
 
     const headerValues = Object.values(jsonData[0] || {});
+
     const headers = Object.keys(jsonData[0] || {});
 
     const cleanedHeaders = [...requiredHeaders];
@@ -167,10 +177,53 @@ async function createEmpSheet(jsonData) {
       return index !== -1 ? headers[index] : null;
     });
 
+    let totalIndex = Object.values(jsonData[0]).findIndex(
+      (val) => val === "Total"
+    );
+    let conveyanceDaysIndex =
+      Object.values(jsonData[0]).findIndex((val) => val === "Total") - 1;
+
     const values = jsonData.slice(1).map((rowObj) =>
       requiredHeaders.map((reqHeader, idx) => {
         const key = cleanedHeaderKeys[idx];
-        return key && rowObj[key] !== undefined ? rowObj[key] : 0;
+
+        const parsedData = parseSalarySheet(jsonDataSalary);
+
+        let colName =
+          rowObj.__EMPTY_3 === "Casual Labour"
+            ? "Casual Labour (Unskilled)"
+            : rowObj.__EMPTY_3 === "Jr. Supervisor"
+            ? "Jr. Supervisor (Semi Skilled)"
+            : rowObj.__EMPTY_3 === "Jr. Supervisor"
+            ? "Jr. Supervisor (Semi Skilled)"
+            : rowObj.__EMPTY_3 === "Tr. Supervisor"
+            ? "Trainee Supervisor (Semi Skilled)"
+            : rowObj.__EMPTY_3 === "Sr. MHE"
+            ? "Jr. MHE Operator (Semi Skilled)"
+            : rowObj.__EMPTY_3;
+
+        if (reqHeader === "Fixed Basic") {
+          return parsedData[colName] ? parsedData[colName]["BASIC WAGES"] : 0;
+        }
+
+        if (reqHeader === "Fixed VDA") {
+          return parsedData[colName] ? parsedData[colName]["VDA"] : 0;
+        }
+        if (reqHeader === "HRA") {
+          return parsedData[colName] ? parsedData[colName]["HRA"] : 0;
+        }
+
+        if (reqHeader === "Man Days") {
+          const totalKey = `__EMPTY_${conveyanceDaysIndex}`;
+          return (rowObj[totalKey] =
+            rowObj[`__EMPTY_${conveyanceDaysIndex}`] || 0);
+        }
+        if (reqHeader === "Allowance Days") {
+          const conveyanceDaysIndexKey = `__EMPTY_${totalIndex}`;
+          return (rowObj[conveyanceDaysIndexKey] =
+            rowObj[`__EMPTY_${totalIndex}`] || 0);
+        }
+        return key && rowObj[key] !== undefined && rowObj[key];
       })
     );
 
@@ -185,27 +238,22 @@ async function createEmpSheet(jsonData) {
       requestBody: { values: empDetails },
     });
 
+    // await sheets.spreadsheets.batchUpdate({
+    //   spreadsheetId: SPREADSHEET_ID,
+    // });
+
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
       requestBody: {
         requests: [
           {
-            copyPaste: {
-              source: {
+            autoResizeDimensions: {
+              dimensions: {
                 sheetId: newSheetId,
-                startRowIndex: 1,
-                endRowIndex: 2,
-                startColumnIndex: 3,
-                endColumnIndex: 9,
+                dimension: "COLUMNS",
+                startIndex: 0,
+                endIndex: 43,
               },
-              destination: {
-                sheetId: newSheetId,
-                startRowIndex: 2,
-                endRowIndex: empDetails.length,
-                startColumnIndex: 3,
-                endColumnIndex: 9,
-              },
-              pasteType: "PASTE_FORMULA",
             },
           },
         ],
