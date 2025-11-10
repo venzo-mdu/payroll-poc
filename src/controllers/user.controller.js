@@ -1,9 +1,23 @@
 import { google } from "googleapis";
-import { v4 as uuidv4 } from "uuid";
+import dotenv from "dotenv";
+dotenv.config();
 import path from "path";
 import fs from "fs";
 import XLSX from "xlsx";
 import { parseSalarySheet } from "./salaryExcel.js";
+import {
+  calName,
+  findVal,
+  generateUniqueId,
+  requiredHeaders,
+} from "./generateUniqueId.js";
+
+const CREDENTIALS_PATH = process.env.CREDENTIALS_PATH;
+const SCOPES = [process.env.SCOPES];
+const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
+
+const uuid = generateUniqueId();
+const newExcelName = `EmpDetails-${uuid}`;
 
 export const createUser = async (req, res) => {
   try {
@@ -61,20 +75,6 @@ export const createUser = async (req, res) => {
   }
 };
 
-const CREDENTIALS_PATH = "./google.json";
-const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
-const SPREADSHEET_ID = "1ZwwBDyHc6bJunW9V_Uia3BzTrn5ahd8bkEjwc9xIUT0";
-// const SPREADSHEET_ID = "1-zRLd6uIPotzcNJSEbJ4_MKS7K0NLX79Yt_kXOJ-_Dc";
-
-function generateUniqueId() {
-  const now = Date.now().toString(36); // timestamp part
-  const rand = Math.random().toString(36).substring(2, 4); // random part
-  return (now + rand).substring(-6).toUpperCase().slice(-6);
-}
-
-const uuid = generateUniqueId();
-const newExcelName = `EmpDetails-${uuid}`;
-
 async function createEmpSheet(jsonData, jsonDataSalary) {
   try {
     const auth = new google.auth.GoogleAuth({
@@ -117,52 +117,6 @@ async function createEmpSheet(jsonData, jsonDataSalary) {
       },
     });
 
-    const requiredHeaders = [
-      "S No",
-      "Emp No",
-      "Name",
-      "Category",
-      "DOJ",
-      "Fixed Basic",
-      "Fixed VDA",
-      "HRA",
-      "Gross",
-      "Uniform",
-      "Per day Cost",
-      "Fixed Leave Wages",
-      "Working days",
-      "Man Days",
-      "Allowance Days",
-      "Gross",
-      "Basic",
-      "VDA",
-      "HRA-1",
-      "Leave Wages",
-      "Bonus",
-      "T.A. Allowance",
-      "Total Earn",
-      "Employee PF 12%",
-      "Employee ESI 0.75%",
-      "PT",
-      "LWF",
-      "Advances",
-      "Canteen Deduction",
-      "Other Deduction",
-      "Uniform",
-      "Total Deduc",
-      "Net Pay",
-      "Emplr PF 13%",
-      "Emplr ESI 3.25%",
-      "Empr LWF",
-      "Uniform",
-      "Total Cost",
-      "Service Charge 5 %",
-      "Cost",
-      "New Bank Accounts",
-      "IFSC code",
-      "Salary Process",
-    ];
-
     const headerValues = Object.values(jsonData[0] || {});
 
     const headers = Object.keys(jsonData[0] || {});
@@ -177,11 +131,8 @@ async function createEmpSheet(jsonData, jsonDataSalary) {
       return index !== -1 ? headers[index] : null;
     });
 
-    let totalIndex = Object.values(jsonData[0]).findIndex(
-      (val) => val === "Total"
-    );
-    let conveyanceDaysIndex =
-      Object.values(jsonData[0]).findIndex((val) => val === "Total") - 1;
+    let totalIndex = findVal(jsonData, "Total");
+    let conveyanceDaysIndex = findVal(jsonData, "Total") - 1;
 
     const values = jsonData.slice(1).map((rowObj) =>
       requiredHeaders.map((reqHeader, idx) => {
@@ -238,10 +189,6 @@ async function createEmpSheet(jsonData, jsonDataSalary) {
       requestBody: { values: empDetails },
     });
 
-    // await sheets.spreadsheets.batchUpdate({
-    //   spreadsheetId: SPREADSHEET_ID,
-    // });
-
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
       requestBody: {
@@ -252,7 +199,7 @@ async function createEmpSheet(jsonData, jsonDataSalary) {
                 sheetId: newSheetId,
                 dimension: "COLUMNS",
                 startIndex: 0,
-                endIndex: 43,
+                endIndex: empDetails.length,
               },
             },
           },
@@ -265,12 +212,3 @@ async function createEmpSheet(jsonData, jsonDataSalary) {
     console.error("❌ Error:", error.message);
   }
 }
-
-export const getUsers = async (req, res) => {
-  try {
-    const data = await readSheet();
-    res.status(200).json({ message: "Data fetched ✅", data });
-  } catch (error) {
-    res.status(500).json({ error: "Something went wrong!" });
-  }
-};
