@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import path from "path";
 import fs from "fs";
 import XLSX from "xlsx";
+import bucket from "../Firebase/firebaseConfig.js";
 
 dotenv.config();
 

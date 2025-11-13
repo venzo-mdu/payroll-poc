@@ -11,6 +11,8 @@
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "express-fileupload": "^1.5.2",
+    "firebase": "^12.5.0",
+    "firebase-admin": "^13.6.0",
     "fs": "^0.0.1-security",
     "googleapis": "^105.0.0",
     "node-fetch": "^3.3.2",
