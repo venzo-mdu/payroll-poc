@@ -37,34 +37,6 @@ const addAttendanceSheetLength = async (workbook) => {
   return attendanceUserLength;
 };
 
-// async function uploadExcelToFirebase(workbook) {
-//   const C = workbook.Sheets["Cost Break Up new"];
-//   const R = workbook.Sheets["Rev Salary"];
-//   const Q = workbook.Sheets["Rev Claim"];
-//   const newWorkbook = XLSX.utils.book_new();
-//   XLSX.utils.book_append_sheet(newWorkbook, C, "Cost Break Up new");
-//   const R_new = {};
-//   const range = XLSX.utils.decode_range(R["!ref"]);
-
-//   for (let R_idx = range.s.r; R_idx <= range.s.r + 1; R_idx++) {
-//     for (let C_idx = range.s.c; C_idx <= range.e.c; C_idx++) {
-//       const cellAddress = XLSX.utils.encode_cell({ r: R_idx, c: C_idx });
-//       if (R[cellAddress]) {
-//         R_new[cellAddress] = { ...R[cellAddress] };
-//       }
-//     }
-//   }
-//   R_new["!ref"] = XLSX.utils.encode_range(
-//     { r: range.s.r, c: range.s.c },
-//     { r: range.s.r + 1, c: range.e.c }
-//   );
-//   XLSX.utils.book_append_sheet(newWorkbook, R_new, "Rev Salary");
-//   const combinedPath = "./uploads/Cost_Break_Up_and_Rev_Salary.xlsx";
-//   XLSX.writeFile(newWorkbook, combinedPath);
-//   const fileUrl = await ExcelToFirebase(combinedPath);
-//   fs.unlinkSync(combinedPath);
-//   return fileUrl;
-// }
 
 export async function uploadExcelToFirebase(workbook) {
   try {
