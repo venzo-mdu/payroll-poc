@@ -3,7 +3,10 @@ import dotenv from "dotenv";
 import path from "path";
 import fs from "fs";
 import XLSX from "xlsx";
-import bucket from "../Firebase/firebaseConfig.js";
+import {
+  ExcelToFirebase,
+  fetchFilesFromFirebase,
+} from "./upload.controller.js";
 
 dotenv.config();
 
@@ -33,6 +36,85 @@ const addAttendanceSheetLength = async (workbook) => {
 
   return attendanceUserLength;
 };
+
+// async function uploadExcelToFirebase(workbook) {
+//   const C = workbook.Sheets["Cost Break Up new"];
+//   const R = workbook.Sheets["Rev Salary"];
+//   const Q = workbook.Sheets["Rev Claim"];
+//   const newWorkbook = XLSX.utils.book_new();
+//   XLSX.utils.book_append_sheet(newWorkbook, C, "Cost Break Up new");
+//   const R_new = {};
+//   const range = XLSX.utils.decode_range(R["!ref"]);
+
+//   for (let R_idx = range.s.r; R_idx <= range.s.r + 1; R_idx++) {
+//     for (let C_idx = range.s.c; C_idx <= range.e.c; C_idx++) {
+//       const cellAddress = XLSX.utils.encode_cell({ r: R_idx, c: C_idx });
+//       if (R[cellAddress]) {
+//         R_new[cellAddress] = { ...R[cellAddress] };
+//       }
+//     }
+//   }
+//   R_new["!ref"] = XLSX.utils.encode_range(
+//     { r: range.s.r, c: range.s.c },
+//     { r: range.s.r + 1, c: range.e.c }
+//   );
+//   XLSX.utils.book_append_sheet(newWorkbook, R_new, "Rev Salary");
+//   const combinedPath = "./uploads/Cost_Break_Up_and_Rev_Salary.xlsx";
+//   XLSX.writeFile(newWorkbook, combinedPath);
+//   const fileUrl = await ExcelToFirebase(combinedPath);
+//   fs.unlinkSync(combinedPath);
+//   return fileUrl;
+// }
+
+export async function uploadExcelToFirebase(workbook) {
+  try {
+    const Q = workbook.Sheets["Rev Claim"];
+    const C = workbook.Sheets["Cost Break Up new"];
+    const R = workbook.Sheets["Rev Salary"];
+
+    if (!C || !R || !Q) {
+      throw new Error("One or more sheets are missing in the workbook.");
+    }
+
+    const newWorkbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(newWorkbook, Q, "Rev Claim");
+    XLSX.utils.book_append_sheet(newWorkbook, C, "Cost Break Up new");
+
+    const R_new = {};
+    const range = XLSX.utils.decode_range(R["!ref"]);
+    for (let r = range.s.r; r <= range.s.r + 1; r++) {
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const addr = XLSX.utils.encode_cell({ r, c });
+        if (R[addr]) R_new[addr] = { ...R[addr] };
+      }
+    }
+    R_new["!ref"] = XLSX.utils.encode_range(
+      { r: range.s.r, c: range.s.c },
+      { r: range.s.r + 1, c: range.e.c }
+    );
+
+    XLSX.utils.book_append_sheet(newWorkbook, R_new, "Rev Salary");
+
+    const combinedPath = path.join(
+      "./uploads",
+      "Cost_Break_Up_Rev_Salary_Rev_Claim.xlsx"
+    );
+    fs.mkdirSync(path.dirname(combinedPath), { recursive: true });
+    XLSX.writeFile(newWorkbook, combinedPath);
+
+    console.log("✅ Combined workbook created:", combinedPath);
+
+    const fileUrl = await ExcelToFirebase(combinedPath);
+
+    fs.unlinkSync(combinedPath);
+
+    console.log("✅ Uploaded to Firebase successfully!");
+    return fileUrl;
+  } catch (error) {
+    console.error("❌ Error in uploadExcelToFirebase:", error.message);
+    throw error;
+  }
+}
 
 export const createUser = async (req, res) => {
   try {
@@ -69,71 +151,146 @@ export const createUser = async (req, res) => {
       (s) => s.properties.title
     );
 
-    for (const sheetName of sheetNames) {
-      if ("Rev Salary " === sheetName) {
-        const searchKey = "Attendance";
+    const searchKey = "Attendance";
+    const attendance = Object.values(sheetNames).find((name) =>
+      name.toLowerCase().includes(searchKey.toLowerCase())
+    );
 
-        const result = Object.values(sheetNames).find((name) =>
-          name.toLowerCase().includes(searchKey.toLowerCase())
-        );
+    const isCastBackupAndAttendance =
+      sheetNames.includes("Cost Break Up new") &&
+      sheetNames.includes(attendance);
+    if (isCastBackupAndAttendance) {
+      const result = await uploadExcelToFirebase(workbook);
+      for (const sheetName of sheetNames) {
+        if ("Rev Salary" === sheetName) {
+          let attendanceLength = await addAttendanceSheetLength(workbook);
+          let s = workbook.Sheets[sheetName];
+          const sheetData = XLSX.utils.sheet_to_json(s, {
+            header: 1,
+            defval: "",
+          })[0];
+          await uploadSalarySheet(
+            workbook.Sheets[sheetName],
+            sheets,
+            existingSheets,
+            SPREADSHEET_ID,
+            sheetData,
+            attendanceLength
+          );
+        } else {
+          const sheet = workbook.Sheets[sheetName];
+          const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
-        console.log(result);
-        let attendanceLength = await addAttendanceSheetLength(workbook);
-        let s = workbook.Sheets[sheetName];
-        const sheetData = XLSX.utils.sheet_to_json(s, {
-          header: 1,
-          defval: "",
-        })[0];
-        await uploadSalarySheet(
-          workbook.Sheets[sheetName],
-          sheets,
-          existingSheets,
-          SPREADSHEET_ID,
-          sheetData,
-          attendanceLength
-        );
-      } else {
-        const sheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+          if (!jsonData.length) continue;
 
-        if (!jsonData.length) continue;
-        if (!existingSheets.includes(sheetName)) {
-          await sheets.spreadsheets.batchUpdate({
-            spreadsheetId: SPREADSHEET_ID,
-            requestBody: {
-              requests: [
-                {
-                  addSheet: {
-                    properties: {
-                      title: sheetName,
+          // If sub-sheet does not exist in Google Sheet, create it
+          if (!existingSheets.includes(sheetName)) {
+            await sheets.spreadsheets.batchUpdate({
+              spreadsheetId: SPREADSHEET_ID,
+              requestBody: {
+                requests: [
+                  {
+                    addSheet: {
+                      properties: {
+                        title: sheetName,
+                      },
                     },
                   },
-                },
-              ],
+                ],
+              },
+            });
+            console.log(`✅ Created new sub-sheet: ${sheetName}`);
+          } else {
+            console.log(`ℹ️ Updating existing sub-sheet: ${sheetName}`);
+          }
+
+          // Upload this sub-sheet data
+          await sheets.spreadsheets.values.update({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${sheetName}!A1`,
+            valueInputOption: "USER_ENTERED",
+            requestBody: {
+              values: jsonData,
             },
           });
-          console.log(`✅ Created new sub-sheet: ${sheetName}`);
-        } else {
-          console.log(`ℹ️ Updating existing sub-sheet: ${sheetName}`);
         }
-        await sheets.spreadsheets.values.update({
-          spreadsheetId: SPREADSHEET_ID,
-          range: `${sheetName}!A1`,
-          valueInputOption: "USER_ENTERED",
-          requestBody: {
-            values: jsonData,
-          },
-        });
       }
+
+      fs.unlinkSync(uploadPath);
+
+      res.json({
+        success: true,
+        message: `✅ Uploaded ${sheetNames.length} sub-sheets to Google Sheets.`,
+        uploadedSheets: sheetNames,
+      });
+    } else {
+      let result = await fetchFilesFromFirebase();
+
+      workbook.Sheets = { ...workbook.Sheets, ...result.Sheets };
+      let s = Object.keys(workbook.Sheets);
+      for (const sheetName of Object.keys(workbook.Sheets)) {
+        if ("Rev Salary" === sheetName) {
+          let attendanceLength = await addAttendanceSheetLength(workbook);
+          let s = workbook.Sheets[sheetName];
+          const sheetData = XLSX.utils.sheet_to_json(s, {
+            header: 1,
+            defval: "",
+          })[0];
+          await uploadSalarySheet(
+            workbook.Sheets[sheetName],
+            sheets,
+            existingSheets,
+            SPREADSHEET_ID,
+            sheetData,
+            attendanceLength
+          );
+        } else {
+          const sheet = workbook.Sheets[sheetName];
+          const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+          if (!jsonData.length) continue;
+
+          // If sub-sheet does not exist in Google Sheet, create it
+          if (!existingSheets.includes(sheetName)) {
+            await sheets.spreadsheets.batchUpdate({
+              spreadsheetId: SPREADSHEET_ID,
+              requestBody: {
+                requests: [
+                  {
+                    addSheet: {
+                      properties: {
+                        title: sheetName,
+                      },
+                    },
+                  },
+                ],
+              },
+            });
+            console.log(`✅ Created new sub-sheet: ${sheetName}`);
+          } else {
+            console.log(`ℹ️ Updating existing sub-sheet: ${sheetName}`);
+          }
+
+          // Upload this sub-sheet data
+          await sheets.spreadsheets.values.update({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${sheetName}!A1`,
+            valueInputOption: "USER_ENTERED",
+            requestBody: {
+              values: jsonData,
+            },
+          });
+        }
+      }
+
+      fs.unlinkSync(uploadPath);
+
+      res.json({
+        success: true,
+        message: `✅ Uploaded ${sheetNames.length} sub-sheets to Google Sheets.`,
+        uploadedSheets: sheetNames,
+      });
     }
-
-    fs.unlinkSync(uploadPath);
-
-    res.json({
-      success: true,
-      message: `✅ Uploaded ${sheetNames.length} sub-sheets to Google Sheets.`,
-      uploadedSheets: sheetNames,
-    });
   } catch (error) {
     console.error("❌ Error uploading Excel:", error.message);
     res.status(500).json({ success: false, error: error.message });
@@ -206,16 +363,18 @@ const uploadSalarySheet = async (
     console.log(`ℹ️ Updating existing sub-sheet: ${sheetName}`);
   }
 
-  // let result = [];
+  // const combinedData = [sheetData, ...dataForUpload.slice(10)];
 
-  // for (let i = 1; i < attendanceLength; i++) {
-  //   let updatedRow = [...dataForUpload[0]];
+  // let d = dataForUpload[0];
 
-  //   console.log(updatedRow);
-  //   updatedRow[0] = 1;
+  // const combinedData = [sheetData, [...d]];
 
-  //   result.push(updatedRow);
-  // }
+  // await sheets.spreadsheets.values.update({
+  //   spreadsheetId: SPREADSHEET_ID,
+  //   range: `${sheetName}!A1`,
+  //   valueInputOption: "USER_ENTERED",
+  //   requestBody: { values: combinedData },
+  // });
 
   let result = [];
 
@@ -240,7 +399,7 @@ const uploadSalarySheet = async (
 
   let d = dataForUpload[0];
 
-  let [head, ...rest] = result
+  let [head, ...rest] = result;
 
   const combinedData = [sheetData, ...rest];
 

@@ -1,0 +1,3 @@
+=VLOOKUP(A2, 'Sep-Attendance'!A:H, 2, 0)
+=VLOOKUP(A2, 'Sep-Attendance'!A:H, 3, 0)
+=VLOOKUP(A2, 'Sep-Attendance'!A:H, 5, 0)
